@@ -114,22 +114,23 @@
         </div>
     </div>
 
-    <div id="VG_OVERLAY_CONTAINER" style="width: 0; height: 0;"></div>
+    <div id="voiceflow-chat"></div>
 
     <script>
-        // Initialize Voiceflow widget
-        window.VG_CONFIG = {
-            ID: "mIzv9f5OJuaOzxq",
-            region: 'na',
-            render: 'bottom-right',
-            stylesheets: [
-                "https://vg-bunny-cdn.b-cdn.net/vg_live_build/styles.css"
-            ]
-        };
-
-        const script = document.createElement('script');
-        script.src = "https://vg-bunny-cdn.b-cdn.net/vg_live_build/vg_bundle.js";
-        document.body.appendChild(script);
+        // Initialize Voiceflow widget with the latest configuration
+        (function(d, t) {
+            var v = d.createElement(t), s = d.getElementsByTagName(t)[0];
+            v.onload = function() {
+                window.voiceflow.chat.load({
+                    verify: { projectID: "mIzv9f5OJuaOzxq" },
+                    url: 'https://general-runtime.voiceflow.com',
+                    versionID: 'production',
+                    elementID: 'voiceflow-chat'
+                });
+            }
+            v.src = "https://cdn.voiceflow.com/widget/bundle.js"; 
+            s.parentNode.insertBefore(v, s);
+        })(document, 'script');
 
         // Voice recognition setup
         let recognition = null;
@@ -210,10 +211,13 @@
         }
 
         function sendMessageToVoiceflow(text) {
-            if (window.VG && window.VG.sendMessage) {
-                window.VG.sendMessage(text);
+            if (window.voiceflow && window.voiceflow.chat) {
+                window.voiceflow.chat.interact({
+                    type: 'text',
+                    payload: text
+                });
             } else {
-                showError('Chat widget not ready');
+                showError('Chat widget not ready. Please refresh the page.');
             }
         }
 
