@@ -101,8 +101,9 @@
         </div>
     </div>
 
-    <!-- Voiceflow chat widget container -->
-    <div id="voiceflow-chat"></div>
+    <div style="width: 0; height: 0;" id="VG_OVERLAY_CONTAINER">
+        <!-- Here is where TIXAE Agents renders the widget. -->
+    </div>
 
     <script>
         let recognition = null;
@@ -294,35 +295,31 @@
             }
         });
 
-        // Initialize Voiceflow widget with the latest configuration
-        (function(d, t) {
-            var v = d.createElement(t), s = d.getElementsByTagName(t)[0];
-            v.onload = () => {
-                window.voiceflow.chat.load({
-                    verify: { projectID: "mIzv9f5OJuaOzxq" },
-                    url: 'https://general-runtime.voiceflow.com',
-                    versionID: 'production',
-                    elementID: 'voiceflow-chat',
-                    assistant: {
-                        title: 'AI Assistant',
-                        description: 'Voice-enabled AI Assistant',
-                        avatar: '🤖'
-                    }
-                });
+        // Initialize TIXAE Agents
+        (function() {
+            window.VG_CONFIG = {
+                ID: "mIzv9f5OJuaOzxq",
+                region: 'na',
+                render: 'bottom-right',
+                stylesheets: [
+                    "https://vg-bunny-cdn.b-cdn.net/vg_live_build/styles.css"
+                ]
+            }
+            var VG_SCRIPT = document.createElement("script");
+            VG_SCRIPT.src = "https://vg-bunny-cdn.b-cdn.net/vg_live_build/vg_bundle.js";
+            document.body.appendChild(VG_SCRIPT);
 
-                // Listen for messages from the assistant
-                window.voiceflow.chat.on('message:received', message => {
-                    console.log('Received message:', message);
+            // Listen for messages from the widget
+            window.addEventListener('message', function(event) {
+                if (event.data && event.data.type === 'voiceflow-message') {
+                    const message = event.data.payload;
                     if (message.type === 'text') {
-                        const botMessage = message.payload.message;
-                        showBotResponse(botMessage);
-                        speakBotResponse(botMessage);
+                        showBotResponse(message.payload.message);
+                        speakBotResponse(message.payload.message);
                     }
-                });
-            };
-            v.src = "https://cdn.voiceflow.com/widget/bundle.js";
-            s.parentNode.insertBefore(v, s);
-        })(document, 'script');
+                }
+            });
+        })();
     </script>
 </body>
 </html> 
