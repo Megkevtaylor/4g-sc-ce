@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Voice Chat</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            background-color: #f8f9fa;
+        }
+        .container {
+            width: 100%;
+            max-width: 1200px;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .controls {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        button {
+            padding: 12px 24px;
+            font-size: 18px;
+            cursor: pointer;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 25px;
+            transition: background-color 0.3s ease;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        #transcript {
+            padding: 10px;
+            margin: 10px 0;
+            color: #34495e;
+            font-size: 16px;
+            min-height: 24px;
+        }
+        .status {
+            font-size: 14px;
+            color: #666;
+            margin-top: 5px;
+        }
+        .transcript {
+            margin-top: 20px;
+            padding: 16px;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            text-align: left;
+            display: none;
+        }
+        .transcript.visible {
+            display: block;
+        }
+        .transcript p {
+            margin: 0;
+            color: #4b5563;
+        }
+        .transcript .label {
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>AI Voice Chat with Voiceflow</h1>
+        <div class="controls">
+            <button id="listenButton">Start Talking</button>
+            <div class="status" id="status"></div>
+            <div class="error" id="error"></div>
+            <div class="transcript" id="transcript">
+                <p class="label">You said:</p>
+                <p id="transcriptText"></p>
+            </div>
+            <div class="transcript" id="botResponse">
+                <p class="label">Bot said:</p>
+                <p id="botResponseText"></p>
+            </div>
+        </div>
+    </div>
+
+    <div style="width: 0; height: 0;" id="VG_OVERLAY_CONTAINER">
+        <!-- Here is where TIXAE Agents renders the widget. -->
+    </div>
+
+    <script>
+        let recognition = null;
+        let isListening = false;
+        const synth = window.speechSynthesis;
+        let speaking = false;
+        
+        const listenButton = document.getElementById('listenButton');
+        const statusDiv = document.getElementById('status');
+        const errorDiv = document.getElementById('error');
+        const transcriptDiv = document.getElementById('transcript');
+        const transcriptText = document.getElementById('transcriptText');
+        const botResponseDiv = document.getElementById('botResponse');
+        const botResponseText = document.getElementById('botResponseText');
+
+        function speakBotResponse(text) {
+            if (synth && text) {
+                // Cancel any ongoing speech
+                synth.cancel();
+
+                const utterance = new SpeechSynthesisUtterance(text);
+                
+                // Adjust voice settings for better clarity
+                utterance.rate = 0.9;  // Slightly slower for better clarity
+                utterance.pitch = 1.0; // Normal pitch
+                utterance.volume = 1.0; // Full volume
+
+                // Try to use a more natural voice
+                let voices = synth.getVoices();
+                if (voices.length === 0) {
+                    // If voices aren't loaded yet, wait for them
+                    synth.onvoiceschanged = () => {
+                        voices = synth.getVoices();
+                        setPreferredVoice();
+                    };
+                } else {
+                    setPreferredVoice();
+                }
+
+                function setPreferredVoice() {
+                    const preferredVoice = voices.find(voice => 
+                        voice.name.includes('Samantha') || // iOS/macOS
+                        voice.name.includes('Google US English Female') || // Chrome
+                        voice.name.includes('Microsoft Zira') // Windows
+                    );
+                    if (preferredVoice) {
+                        utterance.voice = preferredVoice;
+                    }
+                }
+
+                utterance.onstart = () => {
+                    speaking = true;
+                    showStatus('Speaking...');
+                };
+
+                utterance.onend = () => {
+                    speaking = false;
+                    showStatus('');
+                    // Wait a short moment before starting to listen again
+                    setTimeout(() => {
+                        if (!isListening) {
+                            startListening();
+                        }
+                    }, 1000);
+                };
+
+                utterance.onerror = (event) => {
+                    console.error('Speech synthesis error:', event);
+                    speaking = false;
+                    showError('Failed to speak response');
+                };
+
+                synth.speak(utterance);
+            }
+        }
+
+        async function requestPermissionAndListen() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                stream.getTracks().forEach(track => track.stop());
+                toggleListening();
+            } catch (err) {
+                console.error('Microphone permission error:', err);
+                showError('Microphone permission denied. Please allow microphone access.');
+            }
+        }
+
+        function toggleListening() {
+            if (isListening) {
+                stopListening();
+            } else {
+                if (!speaking) {
+                    startListening();
+                } else {
+                    showError('Please wait for the bot to finish speaking');
+                }
+            }
+        }
+
+        function startListening() {
+            clearError();
+            
+            if (!('webkitSpeechRecognition' in window)) {
+                showError('Your browser does not support speech recognition. Please try using Chrome!');
+                return;
+            }
+
+            recognition = new webkitSpeechRecognition();
+            recognition.continuous = false;
+            recognition.interimResults = false;
+            recognition.lang = 'en-US';
+
+            recognition.onstart = () => {
+                isListening = true;
+                listenButton.textContent = 'Stop Listening';
+                listenButton.style.backgroundColor = '#dc3545';
+                showStatus('Listening...');
+            };
+
+            recognition.onend = () => {
+                isListening = false;
+                listenButton.textContent = 'Start Talking';
+                listenButton.style.backgroundColor = '#4CAF50';
+                showStatus('');
+            };
+
+            recognition.onresult = (event) => {
+                const text = event.results[0][0].transcript;
+                showTranscript(text);
+                sendMessageToVoiceflow(text);
+            };
+
+            recognition.onerror = (event) => {
+                console.error('Speech recognition error:', event.error);
+                showError(`Speech recognition error: ${event.error}`);
+                isListening = false;
+                listenButton.textContent = 'Start Talking';
+                listenButton.style.backgroundColor = '#4CAF50';
+            };
+
+            recognition.start();
+        }
+
+        function stopListening() {
+            if (recognition) {
+                recognition.stop();
+            }
+        }
+
+        function showBotResponse(text) {
+            botResponseText.textContent = text;
+            botResponseDiv.classList.add('visible');
+        }
+
+        function sendMessageToVoiceflow(text) {
+            if (window.VG && window.VG.sendMessage) {
+                window.VG.sendMessage(text);
+                showStatus('Waiting for response...');
+            } else {
+                showError('Chat widget not ready. Please refresh the page.');
+            }
+        }
+
+        function showStatus(message) {
+            statusDiv.textContent = message;
+        }
+
+        function showError(message) {
+            errorDiv.textContent = message;
+            errorDiv.style.color = '#dc3545';
+        }
+
+        function clearError() {
+            errorDiv.textContent = '';
+        }
+
+        function showTranscript(text) {
+            transcriptText.textContent = text;
+            transcriptDiv.classList.add('visible');
+        }
+
+        // Event listeners
+        listenButton.addEventListener('click', requestPermissionAndListen);
+
+        // Handle page visibility changes
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden && isListening) {
+                stopListening();
+            }
+        });
+
+        // Initialize TIXAE Agents
+        (function() {
+            window.VG_CONFIG = {
+                ID: "kpSwF3yhLpM11W1",
+                region: 'na',
+                render: 'bottom-right',
+                stylesheets: [
+                    "https://vg-bunny-cdn.b-cdn.net/vg_live_build/styles.css"
+                ]
+            }
+            var VG_SCRIPT = document.createElement("script");
+            VG_SCRIPT.src = "https://vg-bunny-cdn.b-cdn.net/vg_live_build/vg_bundle.js";
+            document.body.appendChild(VG_SCRIPT);
+
+            // Listen for messages from the widget
+            window.addEventListener('message', function(event) {
+                if (event.data && event.data.type === 'voiceflow-message') {
+                    const message = event.data.payload;
+                    if (message.type === 'text') {
+                        showBotResponse(message.payload.message);
+                        speakBotResponse(message.payload.message);
+                    }
+                }
+            });
+        })();
+    </script>
+</body>
+</html> 
