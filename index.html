@@ -7,30 +7,18 @@
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            min-height: 100vh;
             margin: 0;
+            padding: 20px;
             background-color: #f8f9fa;
         }
         .container {
-            width: 100%;
-            max-width: 1200px;
-            padding: 20px;
-            box-sizing: border-box;
+            max-width: 800px;
+            margin: 0 auto;
+            text-align: center;
         }
         h1 {
             color: #2c3e50;
-            text-align: center;
             margin-bottom: 30px;
-        }
-        .controls {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 15px;
-            margin-bottom: 20px;
         }
         button {
             padding: 12px 24px;
@@ -40,174 +28,55 @@
             color: white;
             border: none;
             border-radius: 25px;
-            transition: background-color 0.3s ease;
+            margin: 10px;
         }
         button:hover {
             background-color: #45a049;
         }
-        button:disabled {
-            background-color: #cccccc;
-            cursor: not-allowed;
+        #status {
+            margin: 10px;
+            color: #666;
         }
         #transcript {
+            margin: 20px;
             padding: 10px;
-            margin: 10px 0;
-            color: #34495e;
-            font-size: 16px;
-            min-height: 24px;
-        }
-        .status {
-            font-size: 14px;
-            color: #666;
-            margin-top: 5px;
-        }
-        .transcript {
-            margin-top: 20px;
-            padding: 16px;
             background-color: white;
             border-radius: 8px;
             box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-            text-align: left;
-            display: none;
-        }
-        .transcript.visible {
-            display: block;
-        }
-        .transcript p {
-            margin: 0;
-            color: #4b5563;
-        }
-        .transcript .label {
-            font-weight: 600;
-            margin-bottom: 4px;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>AI Voice Chat with Voiceflow</h1>
-        <div class="controls">
-            <button id="listenButton">Start Talking</button>
-            <div class="status" id="status"></div>
-            <div class="error" id="error"></div>
-            <div class="transcript" id="transcript">
-                <p class="label">You said:</p>
-                <p id="transcriptText"></p>
-            </div>
-            <div class="transcript" id="botResponse">
-                <p class="label">Bot said:</p>
-                <p id="botResponseText"></p>
-            </div>
-        </div>
+        <h1>AI Voice Chat</h1>
+        <button id="startButton">Start Voice Chat</button>
+        <div id="status"></div>
+        <div id="transcript"></div>
     </div>
 
     <div style="width: 0; height: 0;" id="VG_OVERLAY_CONTAINER">
         <!-- Here is where TIXAE Agents renders the widget. -->
+        <!-- Set render to 'full-width' then adjust the width and height to 500px (for example) to render the chatbot itself without the popup. -->
     </div>
 
     <script>
-        let recognition = null;
-        let isListening = false;
-        const synth = window.speechSynthesis;
-        let speaking = false;
-        
-        const listenButton = document.getElementById('listenButton');
+        // Basic voice recognition setup
+        const startButton = document.getElementById('startButton');
         const statusDiv = document.getElementById('status');
-        const errorDiv = document.getElementById('error');
         const transcriptDiv = document.getElementById('transcript');
-        const transcriptText = document.getElementById('transcriptText');
-        const botResponseDiv = document.getElementById('botResponse');
-        const botResponseText = document.getElementById('botResponseText');
+        let recognition = null;
 
-        function speakBotResponse(text) {
-            if (synth && text) {
-                // Cancel any ongoing speech
-                synth.cancel();
-
-                const utterance = new SpeechSynthesisUtterance(text);
-                
-                // Adjust voice settings for better clarity
-                utterance.rate = 0.9;  // Slightly slower for better clarity
-                utterance.pitch = 1.0; // Normal pitch
-                utterance.volume = 1.0; // Full volume
-
-                // Try to use a more natural voice
-                let voices = synth.getVoices();
-                if (voices.length === 0) {
-                    // If voices aren't loaded yet, wait for them
-                    synth.onvoiceschanged = () => {
-                        voices = synth.getVoices();
-                        setPreferredVoice();
-                    };
-                } else {
-                    setPreferredVoice();
-                }
-
-                function setPreferredVoice() {
-                    const preferredVoice = voices.find(voice => 
-                        voice.name.includes('Samantha') || // iOS/macOS
-                        voice.name.includes('Google US English Female') || // Chrome
-                        voice.name.includes('Microsoft Zira') // Windows
-                    );
-                    if (preferredVoice) {
-                        utterance.voice = preferredVoice;
-                    }
-                }
-
-                utterance.onstart = () => {
-                    speaking = true;
-                    showStatus('Speaking...');
-                };
-
-                utterance.onend = () => {
-                    speaking = false;
-                    showStatus('');
-                    // Wait a short moment before starting to listen again
-                    setTimeout(() => {
-                        if (!isListening) {
-                            startListening();
-                        }
-                    }, 1000);
-                };
-
-                utterance.onerror = (event) => {
-                    console.error('Speech synthesis error:', event);
-                    speaking = false;
-                    showError('Failed to speak response');
-                };
-
-                synth.speak(utterance);
-            }
-        }
-
-        async function requestPermissionAndListen() {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                stream.getTracks().forEach(track => track.stop());
-                toggleListening();
-            } catch (err) {
-                console.error('Microphone permission error:', err);
-                showError('Microphone permission denied. Please allow microphone access.');
-            }
-        }
-
-        function toggleListening() {
-            if (isListening) {
-                stopListening();
+        startButton.addEventListener('click', () => {
+            if (!recognition) {
+                startVoiceRecognition();
             } else {
-                if (!speaking) {
-                    startListening();
-                } else {
-                    showError('Please wait for the bot to finish speaking');
-                }
+                stopVoiceRecognition();
             }
-        }
+        });
 
-        function startListening() {
-            clearError();
-            
+        function startVoiceRecognition() {
             if (!('webkitSpeechRecognition' in window)) {
-                showError('Your browser does not support speech recognition. Please try using Chrome!');
+                alert('Speech recognition is not supported in this browser. Please use Chrome.');
                 return;
             }
 
@@ -217,108 +86,64 @@
             recognition.lang = 'en-US';
 
             recognition.onstart = () => {
-                isListening = true;
-                listenButton.textContent = 'Stop Listening';
-                listenButton.style.backgroundColor = '#dc3545';
-                showStatus('Listening...');
+                startButton.textContent = 'Stop Listening';
+                startButton.style.backgroundColor = '#dc3545';
+                statusDiv.textContent = 'Listening...';
             };
 
             recognition.onend = () => {
-                isListening = false;
-                listenButton.textContent = 'Start Talking';
-                listenButton.style.backgroundColor = '#4CAF50';
-                showStatus('');
+                startButton.textContent = 'Start Voice Chat';
+                startButton.style.backgroundColor = '#4CAF50';
+                statusDiv.textContent = '';
             };
 
             recognition.onresult = (event) => {
                 const text = event.results[0][0].transcript;
-                showTranscript(text);
-                sendMessageToVoiceflow(text);
-            };
-
-            recognition.onerror = (event) => {
-                console.error('Speech recognition error:', event.error);
-                showError(`Speech recognition error: ${event.error}`);
-                isListening = false;
-                listenButton.textContent = 'Start Talking';
-                listenButton.style.backgroundColor = '#4CAF50';
+                transcriptDiv.textContent = 'You said: ' + text;
+                
+                // Send message to TIXAE Agents
+                if (window.VG && window.VG.sendMessage) {
+                    window.VG.sendMessage(text);
+                } else {
+                    statusDiv.textContent = 'Chat widget not ready. Please refresh the page.';
+                }
             };
 
             recognition.start();
         }
 
-        function stopListening() {
+        function stopVoiceRecognition() {
             if (recognition) {
                 recognition.stop();
+                recognition = null;
             }
         }
-
-        function showBotResponse(text) {
-            botResponseText.textContent = text;
-            botResponseDiv.classList.add('visible');
-        }
-
-        function sendMessageToVoiceflow(text) {
-            if (window.VG && window.VG.sendMessage) {
-                window.VG.sendMessage(text);
-                showStatus('Waiting for response...');
-            } else {
-                showError('Chat widget not ready. Please refresh the page.');
-            }
-        }
-
-        function showStatus(message) {
-            statusDiv.textContent = message;
-        }
-
-        function showError(message) {
-            errorDiv.textContent = message;
-            errorDiv.style.color = '#dc3545';
-        }
-
-        function clearError() {
-            errorDiv.textContent = '';
-        }
-
-        function showTranscript(text) {
-            transcriptText.textContent = text;
-            transcriptDiv.classList.add('visible');
-        }
-
-        // Event listeners
-        listenButton.addEventListener('click', requestPermissionAndListen);
 
         // Handle page visibility changes
         document.addEventListener('visibilitychange', () => {
-            if (document.hidden && isListening) {
-                stopListening();
+            if (document.hidden && recognition) {
+                stopVoiceRecognition();
             }
         });
+    </script>
 
-        // Initialize TIXAE Agents
+    <!-- TIXAE Agents Widget -->
+    <script defer>
         (function() {
             window.VG_CONFIG = {
-                ID: "mIzv9f5OJuaOzxq",
-                region: 'na',
-                render: 'bottom-right',
+                ID: "mIzv9f5OJuaOzxq", // YOUR AGENT ID
+                region: 'na', // YOUR ACCOUNT REGION 
+                render: 'bottom-right', // can be 'full-width' or 'bottom-left' or 'bottom-right'
+                // modalMode: true // Set this to 'true' to open the widget in modal mode
                 stylesheets: [
-                    "https://vg-bunny-cdn.b-cdn.net/vg_live_build/styles.css"
+                    // Base TIXAE Agents CSS
+                    "https://vg-bunny-cdn.b-cdn.net/vg_live_build/styles.css",
                 ]
             }
             var VG_SCRIPT = document.createElement("script");
             VG_SCRIPT.src = "https://vg-bunny-cdn.b-cdn.net/vg_live_build/vg_bundle.js";
+            VG_SCRIPT.defer = true; // Remove 'defer' if you want widget to load faster (Will affect website loading)
             document.body.appendChild(VG_SCRIPT);
-
-            // Listen for messages from the widget
-            window.addEventListener('message', function(event) {
-                if (event.data && event.data.type === 'voiceflow-message') {
-                    const message = event.data.payload;
-                    if (message.type === 'text') {
-                        showBotResponse(message.payload.message);
-                        speakBotResponse(message.payload.message);
-                    }
-                }
-            });
         })();
     </script>
 </body>
